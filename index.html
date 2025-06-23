@@ -3,276 +3,568 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI 旅遊規劃助理</title>
+    <title>AI 旅遊規劃助理 Pro</title>
+    
+    <!-- 引入 Marked.js 用來渲染 Markdown -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <!-- 引入 Sortable.js 用來實現拖曳排序 -->
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+    <!-- 引入 Lucide Icons for a cleaner look -->
+    <script src="https://cdn.jsdelivr.net/npm/lucide-static@latest/dist/lucide.min.js"></script>
+
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 0; background-color: #f4f7f9; display: flex; flex-direction: column; height: 100vh; }
-        .container { max-width: 1200px; margin: 0 auto; padding: 20px; width: 100%; box-sizing: border-box; display: flex; flex-grow: 1; gap: 20px; overflow: hidden; }
-        .chat-panel { flex: 1; display: flex; flex-direction: column; background: #fff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); overflow: hidden; }
-        .trip-panel { flex: 1; background: #fff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); overflow-y: auto; padding: 20px; }
-        h1, h2, h3 { color: #333; }
+        :root {
+            --bg-color: #f4f7f9;
+            --panel-bg-color: #ffffff;
+            --text-color: #333;
+            --primary-color: #007bff;
+            --primary-hover-color: #0056b3;
+            --border-color: #e0e0e0;
+            --shadow-color: rgba(0,0,0,0.08);
+            --user-msg-bg: #007bff;
+            --ai-msg-bg: #e9ecef;
+            --icon-color: #555;
+        }
+
+        body.dark-mode {
+            --bg-color: #1a1a1a;
+            --panel-bg-color: #2c2c2c;
+            --text-color: #e0e0e0;
+            --primary-color: #3b82f6;
+            --primary-hover-color: #2563eb;
+            --border-color: #444;
+            --shadow-color: rgba(0,0,0,0.2);
+            --user-msg-bg: #3b82f6;
+            --ai-msg-bg: #444;
+            --icon-color: #bbb;
+        }
+
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; 
+            margin: 0; 
+            background-color: var(--bg-color); 
+            color: var(--text-color);
+            display: flex; 
+            flex-direction: column; 
+            height: 100vh; 
+            transition: background-color 0.3s, color 0.3s;
+        }
+
+        /* --- Header --- */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 20px;
+            background-color: var(--panel-bg-color);
+            border-bottom: 1px solid var(--border-color);
+            box-shadow: 0 2px 8px var(--shadow-color);
+            flex-shrink: 0;
+        }
+        .header h1 { margin: 0; font-size: 1.5em; }
+        .header-controls { display: flex; align-items: center; gap: 15px; }
+        .theme-toggle, .menu-toggle {
+            background: none; border: none; cursor: pointer; color: var(--icon-color);
+        }
+        .menu-toggle { display: none; } /* Hidden on desktop */
+
+        /* --- Main Container --- */
+        .container { 
+            max-width: 1400px; 
+            margin: 0 auto; 
+            padding: 20px; 
+            width: 100%; 
+            box-sizing: border-box; 
+            display: flex; 
+            flex-grow: 1; 
+            gap: 20px; 
+            overflow: hidden; 
+        }
+
+        /* --- Panels --- */
+        .chat-panel, .trip-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: var(--panel-bg-color);
+            border-radius: 12px;
+            box-shadow: 0 4px 12px var(--shadow-color);
+            overflow: hidden;
+            transition: background-color 0.3s, border-color 0.3s;
+            min-width: 300px; /* Minimum width for panels */
+        }
+
+        /* --- Chat Panel --- */
         .chat-box { flex-grow: 1; padding: 20px; overflow-y: auto; }
-        .chat-message { margin-bottom: 15px; padding: 10px 15px; border-radius: 18px; max-width: 80%; }
-        .user-message { background-color: #007bff; color: white; align-self: flex-end; margin-left: auto; }
-        .ai-message { background-color: #e9ecef; color: #333; align-self: flex-start; }
+        .chat-message { margin-bottom: 15px; padding: 10px 15px; border-radius: 18px; max-width: 85%; line-height: 1.5; }
+        .user-message { background-color: var(--user-msg-bg); color: white; align-self: flex-end; margin-left: auto; }
+        .ai-message { background-color: var(--ai-msg-bg); color: var(--text-color); align-self: flex-start; }
         .ai-message.loading::after { content: '▋'; display: inline-block; animation: blink 1s infinite; }
         @keyframes blink { 50% { opacity: 0; } }
-        .input-area { display: flex; padding: 15px; border-top: 1px solid #ddd; }
-        #userInput { flex-grow: 1; padding: 10px; border: 1px solid #ccc; border-radius: 20px; margin-right: 10px; }
-        #sendBtn, #generateJsonBtn { padding: 10px 20px; border: none; background-color: #007bff; color: white; border-radius: 20px; cursor: pointer; transition: background-color 0.3s; }
-        #sendBtn:hover, #generateJsonBtn:hover { background-color: #0056b3; }
-        .trip-panel h2 { border-bottom: 2px solid #007bff; padding-bottom: 10px; }
-        .day-card { border: 1px solid #eee; border-radius: 8px; margin-bottom: 20px; padding: 15px; }
-        .item-card { border-left: 4px solid #007bff; padding-left: 15px; margin-bottom: 15px; }
-        .item-card strong { font-size: 1.1em; }
-        .item-card .notes { margin-top: 8px; color: #555; }
-        .item-card .notes a { color: #007bff; text-decoration: none; }
-        .item-card .notes img { max-width: 100%; border-radius: 4px; margin-top: 5px; }
-        .cost { font-weight: bold; color: #28a745; }
-        #api-key-modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 1000; }
-        .modal-content { background: white; padding: 30px; border-radius: 8px; text-align: center; box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
+        .input-area { display: flex; padding: 15px; border-top: 1px solid var(--border-color); }
+        #userInput { flex-grow: 1; padding: 12px; border: 1px solid var(--border-color); border-radius: 20px; margin-right: 10px; background-color: var(--bg-color); color: var(--text-color); }
+        #sendBtn { padding: 12px 20px; border: none; background-color: var(--primary-color); color: white; border-radius: 20px; cursor: pointer; transition: background-color 0.3s; }
+        #sendBtn:hover { background-color: var(--primary-hover-color); }
+        #sendBtn:disabled { background-color: #ccc; cursor: not-allowed; }
+        .prompt-suggestions { padding: 10px 20px 0; display: flex; flex-wrap: wrap; gap: 8px; }
+        .prompt-btn { font-size: 0.8em; padding: 5px 10px; border-radius: 15px; border: 1px solid var(--primary-color); color: var(--primary-color); background: transparent; cursor: pointer; }
+
+        /* --- Trip Panel --- */
+        .trip-panel-content { overflow-y: auto; padding: 20px; flex-grow: 1; }
+        .trip-controls { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 20px; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 15px; }
+        .trip-controls select, .trip-controls button {
+            padding: 8px 12px;
+            border: 1px solid var(--border-color);
+            background-color: transparent;
+            color: var(--text-color);
+            border-radius: 8px;
+            cursor: pointer;
+        }
+        .trip-controls button.primary { background-color: var(--primary-color); color: white; border-color: var(--primary-color); }
+        #trip-display h3 { border-bottom: 2px solid var(--primary-color); padding-bottom: 10px; }
+        .day-card { border: 1px solid var(--border-color); border-radius: 8px; margin-bottom: 20px; padding: 15px; }
+        .day-header { display: flex; justify-content: space-between; align-items: center; }
+        .item-card { border-left: 4px solid var(--primary-color); padding: 15px; margin-bottom: 15px; background-color: var(--bg-color); border-radius: 0 8px 8px 0; position: relative; cursor: grab; }
+        .item-card:grabbing { cursor: grabbing; }
+        .item-card-header { display: flex; justify-content: space-between; align-items: flex-start; }
+        .item-card-title { font-size: 1.1em; font-weight: bold; }
+        .item-card-controls { display: flex; gap: 8px; }
+        .item-card-controls button { background: none; border: none; color: var(--icon-color); cursor: pointer; padding: 2px; }
+        .item-card .notes { margin-top: 8px; color: #888; }
+        .item-card .notes a { color: var(--primary-color); text-decoration: none; }
+        #total-cost-display { margin-top: 20px; padding-top: 20px; border-top: 2px solid var(--border-color); }
+
+        /* --- Modals --- */
+        .modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: none; justify-content: center; align-items: center; z-index: 1000; }
+        .modal.active { display: flex; }
+        .modal-content { background: var(--panel-bg-color); padding: 30px; border-radius: 8px; text-align: center; box-shadow: 0 5px 15px rgba(0,0,0,0.3); width: 90%; max-width: 500px; }
+        .modal-content h2 { margin-top: 0; }
+        .modal-content input, .modal-content textarea, .modal-content select { width: 100%; padding: 10px; margin-bottom: 15px; border-radius: 5px; border: 1px solid var(--border-color); box-sizing: border-box; background-color: var(--bg-color); color: var(--text-color); }
+        .modal-buttons { display: flex; justify-content: flex-end; gap: 10px; }
+
+        /* --- Responsive Design --- */
+        @media (max-width: 768px) {
+            .header h1 { font-size: 1.2em; }
+            .menu-toggle { display: block; }
+            .container { flex-direction: column; padding: 10px; gap: 10px; }
+            .trip-panel {
+                position: fixed;
+                top: 0;
+                right: -100%; /* Start off-screen */
+                width: 85%;
+                height: 100%;
+                z-index: 2000;
+                transition: right 0.3s ease-in-out;
+                box-shadow: -5px 0 15px rgba(0,0,0,0.2);
+            }
+            .trip-panel.show {
+                right: 0;
+            }
+            .panel-overlay {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0,0,0,0.5);
+                z-index: 1999;
+                display: none;
+            }
+            .panel-overlay.show { display: block; }
+        }
     </style>
 </head>
 <body>
 
-    <div id="api-key-modal">
+    <div id="api-key-modal" class="modal active">
         <div class="modal-content">
             <h2>請輸入您的 Google Gemini API 金鑰</h2>
             <p>您的金鑰將會儲存在瀏覽器中，方便下次使用。</p>
-            <input type="password" id="apiKeyInput" placeholder="在此貼上您的 API Key" size="40" style="padding: 10px; border-radius: 5px; border: 1px solid #ccc;">
-            <br><br>
-            <button id="saveApiBtn" style="padding: 10px 20px; border: none; background-color: #28a745; color: white; border-radius: 5px; cursor: pointer;">開始使用</button>
+            <input type="password" id="apiKeyInput" placeholder="在此貼上您的 API Key" size="40">
+            <div class="modal-buttons" style="justify-content: center;">
+                 <button id="saveApiBtn" class="primary">開始使用</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="item-editor-modal" class="modal">
+        <div class="modal-content">
+            <h2 id="modalTitle">編輯行程項目</h2>
+            <form id="item-editor-form">
+                <input type="hidden" id="editDayIndex">
+                <input type="hidden" id="editItemIndex">
+                <select id="editItemType">
+                    <option value="景點">景點</option>
+                    <option value="餐飲">餐飲</option>
+                    <option value="交通">交通</option>
+                    <option value="住宿">住宿</option>
+                    <option value="購物">購物</option>
+                    <option value="其他">其他</option>
+                </select>
+                <input type="text" id="editItemName" placeholder="項目名稱" required>
+                <input type="text" id="editItemTime" placeholder="時間 (例如: 09:00 - 11:00)">
+                <input type="number" id="editItemCost" placeholder="費用 (數字)">
+                <textarea id="editItemNotes" rows="4" placeholder="備註 (支援 Markdown)"></textarea>
+                <div class="modal-buttons">
+                    <button type="button" id="cancelEditBtn">取消</button>
+                    <button type="submit" class="primary">儲存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="header">
+        <h1>AI 旅遊規劃助理</h1>
+        <div class="header-controls">
+            <button class="theme-toggle" id="themeToggleBtn">
+                <i data-lucide="sun"></i>
+            </button>
+            <button class="menu-toggle" id="menuToggleBtn">
+                <i data-lucide="menu"></i>
+            </button>
         </div>
     </div>
 
     <div class="container" id="app-container" style="display: none;">
+        <div class="panel-overlay" id="panelOverlay"></div>
         <div class="chat-panel">
             <div class="chat-box" id="chatBox">
-                <div class="ai-message">你好！想去哪裡玩呢？告訴我你的想法，例如「我想去日本東京 5 天，喜歡動漫和美食」。</div>
+                <div class="ai-message">你好！想去哪裡玩呢？告訴我你的想法，我可以幫你規劃。</div>
+            </div>
+            <div class="prompt-suggestions">
+                <button class="prompt-btn">規劃東京五日遊，喜歡動漫和美食</button>
+                <button class="prompt-btn">家庭親子遊，沖繩三天兩夜</button>
+                <button class="prompt-btn">巴黎浪漫之旅一週</button>
             </div>
             <div class="input-area">
                 <input type="text" id="userInput" placeholder="輸入訊息...">
-                <button id="sendBtn">發送</button>
+                <button id="sendBtn">
+                    <i data-lucide="send"></i>
+                </button>
             </div>
         </div>
-        <div class="trip-panel">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <h2>我的行程規劃</h2>
-                <button id="generateJsonBtn">一鍵生成行程</button>
+        <div class="trip-panel" id="tripPanel">
+            <div class="trip-controls">
+                <select id="tripSelector"></select>
+                <button id="newTripBtn" class="primary">新行程</button>
+                <button id="deleteTripBtn">刪除目前行程</button>
+                <button id="exportJsonBtn">匯出JSON</button>
+                <button id="exportMdBtn">匯出MD</button>
             </div>
-            <div id="trip-display">
-                <p>在這裡，AI 生成的行程將會以結構化的方式顯示。</p>
-            </div>
-             <div id="total-cost-display" style="margin-top: 20px; padding-top: 20px; border-top: 2px solid #ccc;">
-                <h3>總費用統計</h3>
-                <p id="totalCostText">尚未計算</p>
+            <div class="trip-panel-content" id="trip-panel-content">
+                <div id="trip-display">
+                    <p>在這裡，AI 生成的行程將會以結構化的方式顯示。或從上方選擇一個已儲存的行程。</p>
+                </div>
+                 <div id="total-cost-display">
+                    <h3>總費用統計</h3>
+                    <p id="totalCostText">尚未計算</p>
+                </div>
             </div>
         </div>
     </div>
-
-    <!-- 引入 Marked.js 用來渲染 Markdown -->
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     
     <script type="module">
-        // 引入 Google Generative AI SDK
         import { GoogleGenerativeAI } from "https://esm.run/@google/generative-ai";
 
-        // DOM 元素
-        const apiKeyModal = document.getElementById('api-key-modal');
-        const appContainer = document.getElementById('app-container');
-        const apiKeyInput = document.getElementById('apiKeyInput');
-        const saveApiBtn = document.getElementById('saveApiBtn');
-        const chatBox = document.getElementById('chatBox');
-        const userInput = document.getElementById('userInput');
-        const sendBtn = document.getElementById('sendBtn');
-        const generateJsonBtn = document.getElementById('generateJsonBtn');
-        const tripDisplay = document.getElementById('trip-display');
-        const totalCostText = document.getElementById('totalCostText');
+        // --- 全域狀態管理 ---
+        let state = {
+            genAI: null,
+            chat: null,
+            chatHistory: [],
+            allTrips: {}, // { "tripId1": tripData, "tripId2": tripData }
+            currentTripId: null,
+            theme: 'light',
+        };
 
-        let genAI;
-        let chat;
-        let chatHistory = [];
+        // --- DOM 元素 ---
+        const D = {
+            apiKeyModal: document.getElementById('api-key-modal'),
+            appContainer: document.getElementById('app-container'),
+            apiKeyInput: document.getElementById('apiKeyInput'),
+            saveApiBtn: document.getElementById('saveApiBtn'),
+            chatBox: document.getElementById('chatBox'),
+            userInput: document.getElementById('userInput'),
+            sendBtn: document.getElementById('sendBtn'),
+            tripDisplay: document.getElementById('trip-display'),
+            totalCostText: document.getElementById('totalCostText'),
+            themeToggleBtn: document.getElementById('themeToggleBtn'),
+            menuToggleBtn: document.getElementById('menuToggleBtn'),
+            tripPanel: document.getElementById('tripPanel'),
+            panelOverlay: document.getElementById('panelOverlay'),
+            tripSelector: document.getElementById('tripSelector'),
+            newTripBtn: document.getElementById('newTripBtn'),
+            deleteTripBtn: document.getElementById('deleteTripBtn'),
+            exportJsonBtn: document.getElementById('exportJsonBtn'),
+            exportMdBtn: document.getElementById('exportMdBtn'),
+            itemEditorModal: document.getElementById('item-editor-modal'),
+            itemEditorForm: document.getElementById('item-editor-form'),
+            cancelEditBtn: document.getElementById('cancelEditBtn'),
+            modalTitle: document.getElementById('modalTitle'),
+        };
 
-        // 1. 初始化與 API 金鑰處理
-        function initializeApp() {
+        // --- 本地儲存 ---
+        const saveState = () => {
+            const dataToSave = {
+                allTrips: state.allTrips,
+                currentTripId: state.currentTripId,
+                theme: state.theme,
+            };
+            localStorage.setItem('travelAppData', JSON.stringify(dataToSave));
+        };
+
+        const loadState = () => {
+            const savedData = localStorage.getItem('travelAppData');
+            if (savedData) {
+                const parsedData = JSON.parse(savedData);
+                state.allTrips = parsedData.allTrips || {};
+                state.currentTripId = parsedData.currentTripId || null;
+                state.theme = parsedData.theme || 'light';
+            }
+        };
+
+        // --- 初始化 ---
+        const initializeApp = () => {
+            loadState();
+            applyTheme();
+            updateTripSelector();
+            lucide.createIcons();
+
             const apiKey = localStorage.getItem('GEMINI_API_KEY');
             if (apiKey) {
-                genAI = new GoogleGenerativeAI(apiKey);
-                apiKeyModal.style.display = 'none';
-                appContainer.style.display = 'flex';
-                startChat();
+                state.genAI = new GoogleGenerativeAI(apiKey);
+                D.apiKeyModal.classList.remove('active');
+                D.appContainer.style.display = 'flex';
+                startNewChat();
+                if (state.currentTripId && state.allTrips[state.currentTripId]) {
+                    renderTrip(state.allTrips[state.currentTripId]);
+                }
             } else {
-                apiKeyModal.style.display = 'flex';
-                appContainer.style.display = 'none';
+                D.apiKeyModal.classList.add('active');
             }
-        }
+        };
 
-        saveApiBtn.addEventListener('click', () => {
-            const apiKey = apiKeyInput.value.trim();
-            if (apiKey) {
-                localStorage.setItem('GEMINI_API_KEY', apiKey);
-                initializeApp();
-            } else {
-                alert('請輸入有效的 API 金鑰');
-            }
-        });
-        
-        // 2. 啟動聊天
-        function startChat() {
-            const model = genAI.getGenerativeModel({ 
-                model: "gemini-1.5-pro", // 使用最新模型
-                tools: [{googleSearch: {}}], // 啟用 Google Search 聯網功能
-                systemInstruction: "你是一位專業的旅遊行程規劃助理。你會利用網路搜尋最新資訊來規劃行程。在與使用者對話後，你能根據要求將行程轉換為指定的 JSON 格式。",
+        // --- 核心功能：聊天與行程生成 ---
+        const startNewChat = (history = []) => {
+            if (!state.genAI) return;
+            const model = state.genAI.getGenerativeModel({ 
+                model: "gemini-1.5-pro",
+                tools: [{googleSearch: {}}],
+                systemInstruction: "你是一位專業的旅遊行程規劃助理。你會利用網路搜尋最新資訊來規劃行程。在與使用者對話後，你能根據要求將行程轉換為指定的 JSON 格式。請盡量提供精確的時間、費用（當地貨幣，純數字）和備註。備註中可以包含景點的官方網站連結。",
             });
-
-            // 初始化聊天歷史
-            chatHistory = [
+            
+            state.chatHistory = history.length > 0 ? history : [
                 { role: "user", parts: [{ text: "你好！" }] },
                 { role: "model", parts: [{ text: "你好！想去哪裡玩呢？告訴我你的想法，例如「我想去日本東京 5 天，喜歡動漫和美食」。" }] }
             ];
-            chat = model.startChat({ history: chatHistory });
-        }
-        
-        // 3. 發送訊息與接收回覆
-        async function sendMessage() {
-            const message = userInput.value.trim();
-            if (!message) return;
+            state.chat = model.startChat({ history: state.chatHistory });
+            renderChatHistory();
+        };
 
+        const sendMessage = async () => {
+            const message = D.userInput.value.trim();
+            if (!message || !state.chat) return;
+
+            D.userInput.value = '';
+            D.sendBtn.disabled = true;
             addMessageToChatBox(message, 'user');
-            userInput.value = '';
-            
             const loadingIndicator = addMessageToChatBox('', 'ai loading');
 
             try {
-                const result = await chat.sendMessage(message);
-                const response = await result.response;
+                const result = await state.chat.sendMessage(message);
+                const response = result.response;
                 const text = response.text();
 
                 loadingIndicator.classList.remove('loading');
-                loadingIndicator.innerHTML = marked.parse(text); // 渲染 AI 回覆的 Markdown
+                loadingIndicator.innerHTML = marked.parse(text);
                 
-                // 更新聊天歷史
-                chatHistory.push({ role: "user", parts: [{ text: message }] });
-                chatHistory.push({ role: "model", parts: [{ text: text }] });
+                state.chatHistory.push({ role: "user", parts: [{ text: message }] });
+                state.chatHistory.push({ role: "model", parts: [{ text: text }] });
+                
+                // 自動觸發 JSON 生成
+                if (text.includes("行程規劃好了") || text.includes("這是您的行程")) {
+                     generateTripJson();
+                }
 
             } catch (error) {
                 loadingIndicator.classList.remove('loading');
                 loadingIndicator.style.backgroundColor = '#ffdddd';
-                loadingIndicator.textContent = '發生錯誤，請檢查 API 金鑰或網路連線。 ' + error.message;
+                loadingIndicator.textContent = '發生錯誤: ' + error.message;
                 console.error("AI Chat Error:", error);
+            } finally {
+                D.sendBtn.disabled = false;
             }
-        }
+        };
 
-        // 4. 一鍵生成 JSON 行程
-        generateJsonBtn.addEventListener('click', async () => {
-            if (chatHistory.length < 2) {
+        const generateTripJson = async () => {
+            if (state.chatHistory.length < 2) {
                 alert("請先和 AI 對話規劃您的行程！");
                 return;
             }
 
+            const loadingIndicator = addMessageToChatBox('正在為您生成結構化行程...', 'ai');
+            
             const jsonPrompt = `
                 基於我們以上的對話內容，請將整個行程規劃轉換為一個嚴格的 JSON 物件。
-                不要包含任何 JSON 以外的解釋性文字、註解或 markdown 語法。
+                不要包含任何 JSON 以外的解釋性文字、註解或 markdown 語法 (例如 \`\`\`json)。
                 JSON 結構必須如下：
                 {
-                  "tripName": "完整的旅程名稱",
-                  "cities": [
-                    {
+                  "tripName": "一個吸引人的旅程名稱，例如'東京動漫美食五日探險'",
+                  "cities": [{
                       "cityName": "城市名稱",
                       "duration": "停留天數",
-                      "days": [
-                        {
-                          "day": "第幾天",
+                      "days": [{
+                          "day": "第幾天數字",
                           "theme": "當日主題或摘要",
-                          "items": [
-                            {
-                              "type": "景點|餐飲|交通|住宿|購物",
+                          "items": [{
+                              "type": "景點|餐飲|交通|住宿|購物|其他",
                               "startTime": "HH:MM",
                               "endTime": "HH:MM",
                               "name": "項目名稱",
-                              "cost": 數字 (日幣/當地貨幣),
+                              "cost": 數字,
                               "notes": "備註，可包含 **Markdown** 和 [連結](https://...)"
-                            }
-                          ]
-                        }
-                      ]
-                    }
-                  ]
+                            }]
+                        }]
+                    }]
                 }
-                現在，請根據我們的對話歷史生成這個 JSON。
             `;
             
-            addMessageToChatBox('正在為您生成結構化行程...', 'system');
-            
             try {
-                // 使用一個新的 generateContent 呼叫來獲取乾淨的 JSON
-                 const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" }); // 不需要搜尋
-                 const result = await model.generateContent(chatHistory.map(h => h.parts.map(p=>p.text).join('')).join('\n') + '\n' + jsonPrompt);
-
+                const model = state.genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
+                const fullPrompt = state.chatHistory.map(h => `${h.role}: ${h.parts[0].text}`).join('\n') + `\n\n${jsonPrompt}`;
+                const result = await model.generateContent(fullPrompt);
                 let text = result.response.text();
                 
-                // 清理 AI 回應，確保是純淨的 JSON
-                text = text.replace(/^```json\n/, '').replace(/\n```$/, '');
+                text = text.replace(/```json/g, '').replace(/```/g, '').trim();
 
                 const tripData = JSON.parse(text);
-                localStorage.setItem('tripData', JSON.stringify(tripData)); // 儲存到本地
+                
+                const newTripId = `trip_${Date.now()}`;
+                state.allTrips[newTripId] = tripData;
+                state.currentTripId = newTripId;
+                
+                saveState();
+                updateTripSelector();
                 renderTrip(tripData);
+                loadingIndicator.innerHTML = marked.parse("✅ 行程已成功生成並儲存！");
 
             } catch (error) {
-                alert("AI 無法生成有效的行程格式，請調整問題或稍後再試。");
+                loadingIndicator.innerHTML = marked.parse("🔴 生成行程失敗，請檢查對話內容或稍後再試。AI 可能返回了非標準格式。\n錯誤: " + error.message);
                 console.error("JSON Generation Error:", error);
             }
-        });
-        
-        // 5. 將行程 JSON 渲染到畫面
-        function renderTrip(data) {
-            tripDisplay.innerHTML = '';
+        };
+
+        // --- 渲染與 UI 更新 ---
+        const renderTrip = (data) => {
+            if (!data) {
+                D.tripDisplay.innerHTML = `<p>請開始一個新對話，或從上方選擇一個已儲存的行程。</p>`;
+                D.totalCostText.textContent = '尚未計算';
+                return;
+            }
+            D.tripDisplay.innerHTML = '';
             let totalCost = 0;
 
             const tripTitle = document.createElement('h3');
             tripTitle.textContent = data.tripName || '未命名行程';
-            tripDisplay.appendChild(tripTitle);
+            D.tripDisplay.appendChild(tripTitle);
 
             data.cities.forEach(city => {
-                let cityCost = 0;
-                const cityHeader = document.createElement('h4');
-                cityHeader.textContent = `${city.cityName} (${city.duration}天)`;
-                tripDisplay.appendChild(cityHeader);
-
-                city.days.forEach(day => {
+                city.days.forEach((day, dayIndex) => {
                     const dayCard = document.createElement('div');
                     dayCard.className = 'day-card';
-                    let dayCost = 0;
+                    dayCard.dataset.dayIndex = dayIndex;
 
-                    day.items.forEach(item => {
+                    let dayCost = 0;
+                    
+                    const dayHeader = document.createElement('div');
+                    dayHeader.className = 'day-header';
+                    dayHeader.innerHTML = `<h5>Day ${day.day}: ${day.theme || ''}</h5>`;
+                    const addItemBtn = document.createElement('button');
+                    addItemBtn.innerHTML = `<i data-lucide="plus-circle" style="pointer-events: none;"></i>`;
+                    addItemBtn.onclick = () => showItemEditor(dayIndex);
+                    dayHeader.appendChild(addItemBtn);
+                    dayCard.appendChild(dayHeader);
+
+                    const itemsContainer = document.createElement('div');
+                    itemsContainer.className = 'items-container';
+                    
+                    (day.items || []).forEach((item, itemIndex) => {
                         const itemCost = Number(item.cost) || 0;
                         dayCost += itemCost;
                         
                         const itemCard = document.createElement('div');
                         itemCard.className = 'item-card';
+                        itemCard.dataset.itemIndex = itemIndex;
                         itemCard.innerHTML = `
-                            <div><strong>[${item.type}] ${item.name}</strong> (${item.startTime} - ${item.endTime})</div>
+                            <div class="item-card-header">
+                                <div class="item-card-title">[${item.type}] ${item.name}</div>
+                                <div class="item-card-controls">
+                                    <button class="edit-item-btn"><i data-lucide="pencil" style="pointer-events: none;"></i></button>
+                                    <button class="delete-item-btn"><i data-lucide="trash-2" style="pointer-events: none;"></i></button>
+                                </div>
+                            </div>
+                            <div>${item.startTime || ''} - ${item.endTime || ''}</div>
                             <div class="cost">費用: ${itemCost.toLocaleString()}</div>
                             <div class="notes">${marked.parse(item.notes || '')}</div>
                         `;
-                        dayCard.appendChild(itemCard);
+                        itemsContainer.appendChild(itemCard);
                     });
-
-                    const dayHeader = document.createElement('h5');
-                    dayHeader.textContent = `Day ${day.day}: ${day.theme || ''} (本日花費: ${dayCost.toLocaleString()})`;
-                    dayCard.prepend(dayHeader);
                     
-                    tripDisplay.appendChild(dayCard);
-                    cityCost += dayCost;
+                    dayCard.appendChild(itemsContainer);
+                    D.tripDisplay.appendChild(dayCard);
+                    totalCost += dayCost;
+
+                    // Init SortableJS for this day's items
+                    new Sortable(itemsContainer, {
+                        animation: 150,
+                        ghostClass: 'sortable-ghost',
+                        onEnd: (evt) => {
+                            const { oldIndex, newIndex } = evt;
+                            const movedItem = day.items.splice(oldIndex, 1)[0];
+                            day.items.splice(newIndex, 0, movedItem);
+                            state.allTrips[state.currentTripId] = data;
+                            saveState();
+                            renderTrip(data); // Re-render to update indices
+                        }
+                    });
                 });
-                totalCost += cityCost;
             });
             
-            // 更新總費用顯示
-            totalCostText.textContent = `預計總花費: ${totalCost.toLocaleString()}`;
-        }
+            D.totalCostText.textContent = `預計總花費: ${totalCost.toLocaleString()}`;
+            lucide.createIcons();
+        };
         
-        // 輔助函式：將訊息添加到聊天視窗
-        function addMessageToChatBox(text, sender) {
+        const updateTripSelector = () => {
+            D.tripSelector.innerHTML = '';
+            if (Object.keys(state.allTrips).length === 0) {
+                const option = document.createElement('option');
+                option.textContent = "尚無行程";
+                D.tripSelector.appendChild(option);
+                D.tripSelector.disabled = true;
+                D.deleteTripBtn.disabled = true;
+            } else {
+                 D.tripSelector.disabled = false;
+                 D.deleteTripBtn.disabled = false;
+                 for (const tripId in state.allTrips) {
+                    const option = document.createElement('option');
+                    option.value = tripId;
+                    option.textContent = state.allTrips[tripId].tripName || '未命名行程';
+                    if (tripId === state.currentTripId) {
+                        option.selected = true;
+                    }
+                    D.tripSelector.appendChild(option);
+                }
+            }
+        };
+
+        const renderChatHistory = () => {
+            D.chatBox.innerHTML = '';
+            state.chatHistory.slice(-10).forEach(msg => { // Only render recent history to avoid slowness
+                const role = msg.role === 'model' ? 'ai' : 'user';
+                addMessageToChatBox(msg.parts[0].text, role, false);
+            });
+        };
+        
+        const addMessageToChatBox = (text, sender, shouldScroll = true) => {
             const messageDiv = document.createElement('div');
             messageDiv.className = `chat-message ${sender}-message`;
             if (sender !== 'system') {
@@ -280,25 +572,208 @@
             } else {
                messageDiv.textContent = text; 
             }
-            chatBox.appendChild(messageDiv);
-            chatBox.scrollTop = chatBox.scrollHeight;
+            D.chatBox.appendChild(messageDiv);
+            if(shouldScroll) D.chatBox.scrollTop = D.chatBox.scrollHeight;
             return messageDiv;
-        }
+        };
 
-        // 頁面載入時執行
-        userInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') sendMessage();
-        });
-        sendBtn.addEventListener('click', sendMessage);
+        const showItemEditor = (dayIndex, itemIndex = null) => {
+            D.itemEditorForm.reset();
+            const currentTrip = state.allTrips[state.currentTripId];
+            if (!currentTrip) return;
 
-        // 初始載入
-        initializeApp();
+            D.modalTitle.textContent = itemIndex !== null ? '編輯行程項目' : '新增行程項目';
+            document.getElementById('editDayIndex').value = dayIndex;
+            document.getElementById('editItemIndex').value = itemIndex !== null ? itemIndex : '';
+
+            if (itemIndex !== null) {
+                const item = currentTrip.cities[0].days[dayIndex].items[itemIndex];
+                document.getElementById('editItemType').value = item.type;
+                document.getElementById('editItemName').value = item.name;
+                document.getElementById('editItemTime').value = `${item.startTime || ''} - ${item.endTime || ''}`;
+                document.getElementById('editItemCost').value = item.cost;
+                document.getElementById('editItemNotes').value = item.notes;
+            }
+            D.itemEditorModal.classList.add('active');
+        };
+
+        // --- 事件監聽器 ---
+        const setupEventListeners = () => {
+            // API Key
+            D.saveApiBtn.addEventListener('click', () => {
+                const apiKey = D.apiKeyInput.value.trim();
+                if (apiKey) {
+                    localStorage.setItem('GEMINI_API_KEY', apiKey);
+                    initializeApp();
+                } else {
+                    alert('請輸入有效的 API 金鑰');
+                }
+            });
+
+            // Chat
+            D.sendBtn.addEventListener('click', sendMessage);
+            D.userInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendMessage(); });
+            document.querySelector('.prompt-suggestions').addEventListener('click', (e) => {
+                if (e.target.classList.contains('prompt-btn')) {
+                    D.userInput.value = e.target.textContent;
+                    D.userInput.focus();
+                }
+            });
+
+            // Theme & RWD
+            D.themeToggleBtn.addEventListener('click', toggleTheme);
+            D.menuToggleBtn.addEventListener('click', toggleSidePanel);
+            D.panelOverlay.addEventListener('click', toggleSidePanel);
+
+            // Trip Management
+            D.tripSelector.addEventListener('change', (e) => {
+                state.currentTripId = e.target.value;
+                saveState();
+                renderTrip(state.allTrips[state.currentTripId]);
+            });
+            D.newTripBtn.addEventListener('click', () => {
+                if (confirm('確定要開始一個新的行程規劃嗎？目前的對話將會清空。')) {
+                    startNewChat();
+                    renderTrip(null);
+                }
+            });
+            D.deleteTripBtn.addEventListener('click', () => {
+                if (state.currentTripId && confirm(`確定要刪除行程 "${state.allTrips[state.currentTripId].tripName}" 嗎？此操作無法復原。`)) {
+                    delete state.allTrips[state.currentTripId];
+                    state.currentTripId = Object.keys(state.allTrips)[0] || null;
+                    saveState();
+                    updateTripSelector();
+                    renderTrip(state.currentTripId ? state.allTrips[state.currentTripId] : null);
+                }
+            });
+            
+            // Export
+            D.exportJsonBtn.addEventListener('click', exportAsJson);
+            D.exportMdBtn.addEventListener('click', exportAsMarkdown);
+
+            // Item Editing Modal
+            D.cancelEditBtn.addEventListener('click', () => D.itemEditorModal.classList.remove('active'));
+            D.itemEditorForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                const dayIndex = parseInt(document.getElementById('editDayIndex').value);
+                const itemIndex = document.getElementById('editItemIndex').value;
+                const timeParts = document.getElementById('editItemTime').value.split('-').map(t => t.trim());
+
+                const newItemData = {
+                    type: document.getElementById('editItemType').value,
+                    name: document.getElementById('editItemName').value,
+                    startTime: timeParts[0] || '',
+                    endTime: timeParts[1] || '',
+                    cost: parseInt(document.getElementById('editItemCost').value) || 0,
+                    notes: document.getElementById('editItemNotes').value,
+                };
+                
+                const currentTrip = state.allTrips[state.currentTripId];
+                if (itemIndex) { // Editing
+                    currentTrip.cities[0].days[dayIndex].items[parseInt(itemIndex)] = newItemData;
+                } else { // Adding
+                    if (!currentTrip.cities[0].days[dayIndex].items) {
+                        currentTrip.cities[0].days[dayIndex].items = [];
+                    }
+                    currentTrip.cities[0].days[dayIndex].items.push(newItemData);
+                }
+                
+                state.allTrips[state.currentTripId] = currentTrip;
+                saveState();
+                renderTrip(currentTrip);
+                D.itemEditorModal.classList.remove('active');
+            });
+
+            // Delegated events for item cards
+            D.tripDisplay.addEventListener('click', (e) => {
+                const editBtn = e.target.closest('.edit-item-btn');
+                const deleteBtn = e.target.closest('.delete-item-btn');
+                if (editBtn) {
+                    const itemCard = editBtn.closest('.item-card');
+                    const dayCard = itemCard.closest('.day-card');
+                    showItemEditor(parseInt(dayCard.dataset.dayIndex), parseInt(itemCard.dataset.itemIndex));
+                }
+                if (deleteBtn) {
+                    if (confirm('確定要刪除這個項目嗎？')) {
+                        const itemCard = deleteBtn.closest('.item-card');
+                        const dayCard = itemCard.closest('.day-card');
+                        const dayIndex = parseInt(dayCard.dataset.dayIndex);
+                        const itemIndex = parseInt(itemCard.dataset.itemIndex);
+                        
+                        const currentTrip = state.allTrips[state.currentTripId];
+                        currentTrip.cities[0].days[dayIndex].items.splice(itemIndex, 1);
+                        state.allTrips[state.currentTripId] = currentTrip;
+                        saveState();
+                        renderTrip(currentTrip);
+                    }
+                }
+            });
+        };
+
+        // --- 輔助函式 ---
+        const toggleTheme = () => {
+            state.theme = state.theme === 'light' ? 'dark' : 'light';
+            applyTheme();
+            saveState();
+        };
+
+        const applyTheme = () => {
+            if (state.theme === 'dark') {
+                document.body.classList.add('dark-mode');
+                D.themeToggleBtn.innerHTML = `<i data-lucide="moon"></i>`;
+            } else {
+                document.body.classList.remove('dark-mode');
+                D.themeToggleBtn.innerHTML = `<i data-lucide="sun"></i>`;
+            }
+            lucide.createIcons();
+        };
+
+        const toggleSidePanel = () => {
+            D.tripPanel.classList.toggle('show');
+            D.panelOverlay.classList.toggle('show');
+        };
+
+        const downloadFile = (filename, content, type) => {
+            const element = document.createElement('a');
+            element.setAttribute('href', `data:${type};charset=utf-8,` + encodeURIComponent(content));
+            element.setAttribute('download', filename);
+            element.style.display = 'none';
+            document.body.appendChild(element);
+            element.click();
+            document.body.removeChild(element);
+        };
         
-        // 載入本地儲存的行程
-        const savedTrip = localStorage.getItem('tripData');
-        if (savedTrip) {
-            renderTrip(JSON.parse(savedTrip));
-        }
+        const exportAsJson = () => {
+            if (state.currentTripId) {
+                const trip = state.allTrips[state.currentTripId];
+                const filename = `${trip.tripName.replace(/\s/g, '_') || 'trip'}.json`;
+                downloadFile(filename, JSON.stringify(trip, null, 2), 'application/json');
+            }
+        };
+
+        const exportAsMarkdown = () => {
+            if (!state.currentTripId) return;
+            const trip = state.allTrips[state.currentTripId];
+            let md = `# ${trip.tripName}\n\n`;
+            trip.cities.forEach(city => {
+                md += `## ${city.cityName} (${city.duration}天)\n\n`;
+                city.days.forEach(day => {
+                    md += `### Day ${day.day}: ${day.theme}\n\n`;
+                    day.items.forEach(item => {
+                        md += `*   **[${item.type}] ${item.name}** (${item.startTime} - ${item.endTime})\n`;
+                        md += `    *   費用: ${item.cost}\n`;
+                        md += `    *   備註: ${item.notes || '無'}\n`;
+                    });
+                    md += `\n`;
+                });
+            });
+            const filename = `${trip.tripName.replace(/\s/g, '_') || 'trip'}.md`;
+            downloadFile(filename, md, 'text/markdown');
+        };
+
+        // --- 啟動！ ---
+        setupEventListeners();
+        initializeApp();
 
     </script>
 </body>
