@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 旅遊規劃助理</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 0; background-color: #f4f7f9; display: flex; flex-direction: column; height: 100vh; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; width: 100%; box-sizing: border-box; display: flex; flex-grow: 1; gap: 20px; overflow: hidden; }
+        .chat-panel { flex: 1; display: flex; flex-direction: column; background: #fff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); overflow: hidden; }
+        .trip-panel { flex: 1; background: #fff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); overflow-y: auto; padding: 20px; }
+        h1, h2, h3 { color: #333; }
+        .chat-box { flex-grow: 1; padding: 20px; overflow-y: auto; }
+        .chat-message { margin-bottom: 15px; padding: 10px 15px; border-radius: 18px; max-width: 80%; }
+        .user-message { background-color: #007bff; color: white; align-self: flex-end; margin-left: auto; }
+        .ai-message { background-color: #e9ecef; color: #333; align-self: flex-start; }
+        .ai-message.loading::after { content: '▋'; display: inline-block; animation: blink 1s infinite; }
+        @keyframes blink { 50% { opacity: 0; } }
+        .input-area { display: flex; padding: 15px; border-top: 1px solid #ddd; }
+        #userInput { flex-grow: 1; padding: 10px; border: 1px solid #ccc; border-radius: 20px; margin-right: 10px; }
+        #sendBtn, #generateJsonBtn { padding: 10px 20px; border: none; background-color: #007bff; color: white; border-radius: 20px; cursor: pointer; transition: background-color 0.3s; }
+        #sendBtn:hover, #generateJsonBtn:hover { background-color: #0056b3; }
+        .trip-panel h2 { border-bottom: 2px solid #007bff; padding-bottom: 10px; }
+        .day-card { border: 1px solid #eee; border-radius: 8px; margin-bottom: 20px; padding: 15px; }
+        .item-card { border-left: 4px solid #007bff; padding-left: 15px; margin-bottom: 15px; }
+        .item-card strong { font-size: 1.1em; }
+        .item-card .notes { margin-top: 8px; color: #555; }
+        .item-card .notes a { color: #007bff; text-decoration: none; }
+        .item-card .notes img { max-width: 100%; border-radius: 4px; margin-top: 5px; }
+        .cost { font-weight: bold; color: #28a745; }
+        #api-key-modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: flex; justify-content: center; align-items: center; z-index: 1000; }
+        .modal-content { background: white; padding: 30px; border-radius: 8px; text-align: center; box-shadow: 0 5px 15px rgba(0,0,0,0.3); }
+    </style>
+</head>
+<body>
+
+    <div id="api-key-modal">
+        <div class="modal-content">
+            <h2>請輸入您的 Google Gemini API 金鑰</h2>
+            <p>您的金鑰將會儲存在瀏覽器中，方便下次使用。</p>
+            <input type="password" id="apiKeyInput" placeholder="在此貼上您的 API Key" size="40" style="padding: 10px; border-radius: 5px; border: 1px solid #ccc;">
+            <br><br>
+            <button id="saveApiBtn" style="padding: 10px 20px; border: none; background-color: #28a745; color: white; border-radius: 5px; cursor: pointer;">開始使用</button>
+        </div>
+    </div>
+
+    <div class="container" id="app-container" style="display: none;">
+        <div class="chat-panel">
+            <div class="chat-box" id="chatBox">
+                <div class="ai-message">你好！想去哪裡玩呢？告訴我你的想法，例如「我想去日本東京 5 天，喜歡動漫和美食」。</div>
+            </div>
+            <div class="input-area">
+                <input type="text" id="userInput" placeholder="輸入訊息...">
+                <button id="sendBtn">發送</button>
+            </div>
+        </div>
+        <div class="trip-panel">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <h2>我的行程規劃</h2>
+                <button id="generateJsonBtn">一鍵生成行程</button>
+            </div>
+            <div id="trip-display">
+                <p>在這裡，AI 生成的行程將會以結構化的方式顯示。</p>
+            </div>
+             <div id="total-cost-display" style="margin-top: 20px; padding-top: 20px; border-top: 2px solid #ccc;">
+                <h3>總費用統計</h3>
+                <p id="totalCostText">尚未計算</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- 引入 Marked.js 用來渲染 Markdown -->
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    
+    <script type="module">
+        // 引入 Google Generative AI SDK
+        import { GoogleGenerativeAI } from "https://esm.run/@google/generative-ai";
+
+        // DOM 元素
+        const apiKeyModal = document.getElementById('api-key-modal');
+        const appContainer = document.getElementById('app-container');
+        const apiKeyInput = document.getElementById('apiKeyInput');
+        const saveApiBtn = document.getElementById('saveApiBtn');
+        const chatBox = document.getElementById('chatBox');
+        const userInput = document.getElementById('userInput');
+        const sendBtn = document.getElementById('sendBtn');
+        const generateJsonBtn = document.getElementById('generateJsonBtn');
+        const tripDisplay = document.getElementById('trip-display');
+        const totalCostText = document.getElementById('totalCostText');
+
+        let genAI;
+        let chat;
+        let chatHistory = [];
+
+        // 1. 初始化與 API 金鑰處理
+        function initializeApp() {
+            const apiKey = localStorage.getItem('GEMINI_API_KEY');
+            if (apiKey) {
+                genAI = new GoogleGenerativeAI(apiKey);
+                apiKeyModal.style.display = 'none';
+                appContainer.style.display = 'flex';
+                startChat();
+            } else {
+                apiKeyModal.style.display = 'flex';
+                appContainer.style.display = 'none';
+            }
+        }
+
+        saveApiBtn.addEventListener('click', () => {
+            const apiKey = apiKeyInput.value.trim();
+            if (apiKey) {
+                localStorage.setItem('GEMINI_API_KEY', apiKey);
+                initializeApp();
+            } else {
+                alert('請輸入有效的 API 金鑰');
+            }
+        });
+        
+        // 2. 啟動聊天
+        function startChat() {
+            const model = genAI.getGenerativeModel({ 
+                model: "gemini-1.5-pro", // 使用最新模型
+                tools: [{googleSearch: {}}], // 啟用 Google Search 聯網功能
+                systemInstruction: "你是一位專業的旅遊行程規劃助理。你會利用網路搜尋最新資訊來規劃行程。在與使用者對話後，你能根據要求將行程轉換為指定的 JSON 格式。",
+            });
+
+            // 初始化聊天歷史
+            chatHistory = [
+                { role: "user", parts: [{ text: "你好！" }] },
+                { role: "model", parts: [{ text: "你好！想去哪裡玩呢？告訴我你的想法，例如「我想去日本東京 5 天，喜歡動漫和美食」。" }] }
+            ];
+            chat = model.startChat({ history: chatHistory });
+        }
+        
+        // 3. 發送訊息與接收回覆
+        async function sendMessage() {
+            const message = userInput.value.trim();
+            if (!message) return;
+
+            addMessageToChatBox(message, 'user');
+            userInput.value = '';
+            
+            const loadingIndicator = addMessageToChatBox('', 'ai loading');
+
+            try {
+                const result = await chat.sendMessage(message);
+                const response = await result.response;
+                const text = response.text();
+
+                loadingIndicator.classList.remove('loading');
+                loadingIndicator.innerHTML = marked.parse(text); // 渲染 AI 回覆的 Markdown
+                
+                // 更新聊天歷史
+                chatHistory.push({ role: "user", parts: [{ text: message }] });
+                chatHistory.push({ role: "model", parts: [{ text: text }] });
+
+            } catch (error) {
+                loadingIndicator.classList.remove('loading');
+                loadingIndicator.style.backgroundColor = '#ffdddd';
+                loadingIndicator.textContent = '發生錯誤，請檢查 API 金鑰或網路連線。 ' + error.message;
+                console.error("AI Chat Error:", error);
+            }
+        }
+
+        // 4. 一鍵生成 JSON 行程
+        generateJsonBtn.addEventListener('click', async () => {
+            if (chatHistory.length < 2) {
+                alert("請先和 AI 對話規劃您的行程！");
+                return;
+            }
+
+            const jsonPrompt = `
+                基於我們以上的對話內容，請將整個行程規劃轉換為一個嚴格的 JSON 物件。
+                不要包含任何 JSON 以外的解釋性文字、註解或 markdown 語法。
+                JSON 結構必須如下：
+                {
+                  "tripName": "完整的旅程名稱",
+                  "cities": [
+                    {
+                      "cityName": "城市名稱",
+                      "duration": "停留天數",
+                      "days": [
+                        {
+                          "day": "第幾天",
+                          "theme": "當日主題或摘要",
+                          "items": [
+                            {
+                              "type": "景點|餐飲|交通|住宿|購物",
+                              "startTime": "HH:MM",
+                              "endTime": "HH:MM",
+                              "name": "項目名稱",
+                              "cost": 數字 (日幣/當地貨幣),
+                              "notes": "備註，可包含 **Markdown** 和 [連結](https://...)"
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+                現在，請根據我們的對話歷史生成這個 JSON。
+            `;
+            
+            addMessageToChatBox('正在為您生成結構化行程...', 'system');
+            
+            try {
+                // 使用一個新的 generateContent 呼叫來獲取乾淨的 JSON
+                 const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" }); // 不需要搜尋
+                 const result = await model.generateContent(chatHistory.map(h => h.parts.map(p=>p.text).join('')).join('\n') + '\n' + jsonPrompt);
+
+                let text = result.response.text();
+                
+                // 清理 AI 回應，確保是純淨的 JSON
+                text = text.replace(/^```json\n/, '').replace(/\n```$/, '');
+
+                const tripData = JSON.parse(text);
+                localStorage.setItem('tripData', JSON.stringify(tripData)); // 儲存到本地
+                renderTrip(tripData);
+
+            } catch (error) {
+                alert("AI 無法生成有效的行程格式，請調整問題或稍後再試。");
+                console.error("JSON Generation Error:", error);
+            }
+        });
+        
+        // 5. 將行程 JSON 渲染到畫面
+        function renderTrip(data) {
+            tripDisplay.innerHTML = '';
+            let totalCost = 0;
+
+            const tripTitle = document.createElement('h3');
+            tripTitle.textContent = data.tripName || '未命名行程';
+            tripDisplay.appendChild(tripTitle);
+
+            data.cities.forEach(city => {
+                let cityCost = 0;
+                const cityHeader = document.createElement('h4');
+                cityHeader.textContent = `${city.cityName} (${city.duration}天)`;
+                tripDisplay.appendChild(cityHeader);
+
+                city.days.forEach(day => {
+                    const dayCard = document.createElement('div');
+                    dayCard.className = 'day-card';
+                    let dayCost = 0;
+
+                    day.items.forEach(item => {
+                        const itemCost = Number(item.cost) || 0;
+                        dayCost += itemCost;
+                        
+                        const itemCard = document.createElement('div');
+                        itemCard.className = 'item-card';
+                        itemCard.innerHTML = `
+                            <div><strong>[${item.type}] ${item.name}</strong> (${item.startTime} - ${item.endTime})</div>
+                            <div class="cost">費用: ${itemCost.toLocaleString()}</div>
+                            <div class="notes">${marked.parse(item.notes || '')}</div>
+                        `;
+                        dayCard.appendChild(itemCard);
+                    });
+
+                    const dayHeader = document.createElement('h5');
+                    dayHeader.textContent = `Day ${day.day}: ${day.theme || ''} (本日花費: ${dayCost.toLocaleString()})`;
+                    dayCard.prepend(dayHeader);
+                    
+                    tripDisplay.appendChild(dayCard);
+                    cityCost += dayCost;
+                });
+                totalCost += cityCost;
+            });
+            
+            // 更新總費用顯示
+            totalCostText.textContent = `預計總花費: ${totalCost.toLocaleString()}`;
+        }
+        
+        // 輔助函式：將訊息添加到聊天視窗
+        function addMessageToChatBox(text, sender) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `chat-message ${sender}-message`;
+            if (sender !== 'system') {
+               messageDiv.innerHTML = marked.parse(text);
+            } else {
+               messageDiv.textContent = text; 
+            }
+            chatBox.appendChild(messageDiv);
+            chatBox.scrollTop = chatBox.scrollHeight;
+            return messageDiv;
+        }
+
+        // 頁面載入時執行
+        userInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') sendMessage();
+        });
+        sendBtn.addEventListener('click', sendMessage);
+
+        // 初始載入
+        initializeApp();
+        
+        // 載入本地儲存的行程
+        const savedTrip = localStorage.getItem('tripData');
+        if (savedTrip) {
+            renderTrip(JSON.parse(savedTrip));
+        }
+
+    </script>
+</body>
+</html>
