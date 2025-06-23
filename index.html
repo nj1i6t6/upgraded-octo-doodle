@@ -8,6 +8,7 @@
     <!-- 引入外部函式庫 -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+    <!-- Lucide Icons Library - This script needs to load BEFORE its functions are called -->
     <script src="https://cdn.jsdelivr.net/npm/lucide-static@latest/dist/lucide.min.js"></script>
 
     <style>
@@ -47,11 +48,12 @@
             flex-direction: column; 
             height: 100vh; 
             transition: background-color 0.3s, color 0.3s;
+            /* Ensure the body itself is visible for initial render */
         }
 
         /* --- Header --- */
         .header {
-            display: none; /* Initially hidden */
+            display: none; /* Initially hidden, controlled by JS */
             justify-content: space-between;
             align-items: center;
             padding: 10px 20px;
@@ -71,7 +73,7 @@
 
         /* --- Main Container --- */
         .container { 
-            display: none; /* Initially hidden */
+            display: none; /* Initially hidden, controlled by JS */
             max-width: 1400px; 
             margin: 0 auto; 
             padding: 20px; 
@@ -137,7 +139,18 @@
         #total-cost-display { margin-top: 20px; padding-top: 20px; border-top: 2px solid var(--border-color); }
 
         /* --- Modals & Overlays --- */
-        .modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: none; justify-content: center; align-items: center; z-index: 1000; }
+        .modal { 
+            position: fixed; 
+            top: 0; 
+            left: 0; 
+            width: 100%; 
+            height: 100%; 
+            background: rgba(0,0,0,0.6); 
+            display: none; /* Initially hidden, controlled by JS */
+            justify-content: center; 
+            align-items: center; 
+            z-index: 1000; 
+        }
         .modal.active { display: flex; }
         .modal-content { background: var(--panel-bg-color); padding: 30px; border-radius: 8px; text-align: center; box-shadow: 0 5px 15px rgba(0,0,0,0.3); width: 90%; max-width: 500px; }
         .modal-content h2 { margin-top: 0; }
@@ -263,8 +276,7 @@
     <script type="module">
         import { GoogleGenerativeAI } from "https://esm.run/@google/generative-ai";
 
-        // **[FIX]** The entire application logic is now wrapped in a DOMContentLoaded listener.
-        // This ensures all scripts (like lucide.js) are loaded before our code runs.
+        // Wrap the entire application logic inside DOMContentLoaded to ensure all HTML and external scripts are loaded.
         document.addEventListener('DOMContentLoaded', () => {
             const state = { 
                 genAI: null, 
@@ -333,35 +345,38 @@
 
             const initializeApp = () => {
                 loadState();
-                applyTheme();
+                applyTheme(); // Applies theme and calls lucide.createIcons for theme toggle
                 setupEventListeners();
                 updateTripSelector();
                 const apiKey = localStorage.getItem('GEMINI_API_KEY');
                 if (apiKey) {
                     setupAI(apiKey);
                 } else {
+                    // Ensure elements are hidden before showing modal
                     D.header.style.display = 'none';
                     D.appContainer.style.display = 'none';
-                    D.apiKeyModal.classList.add('active');
+                    D.apiKeyModal.classList.add('active'); // Show API key modal
                 }
-                lucide.createIcons();
+                // No lucide.createIcons() here anymore, it's handled by applyTheme or setupAI explicitly
             };
 
             const setupAI = (apiKey) => {
                 try {
                     state.genAI = new GoogleGenerativeAI(apiKey);
-                    D.apiKeyModal.classList.remove('active');
+                    D.apiKeyModal.classList.remove('active'); // Hide API key modal
+                    // Show main app elements
                     D.header.style.display = 'flex';
                     D.appContainer.style.display = 'flex';
                     startNewChat();
                     if (state.currentTripId && state.allTrips[state.currentTripId]) {
                         renderTrip(state.allTrips[state.currentTripId]);
                     }
-                    lucide.createIcons();
+                    lucide.createIcons(); // Ensure all newly visible icons are rendered
                 } catch (error) {
                     alert('AI 初始化失敗！請檢查您的 API 金鑰是否正確。\n錯誤訊息: ' + error.message);
                     console.error("AI Setup Error:", error);
                     localStorage.removeItem('GEMINI_API_KEY');
+                    // Hide main app elements and show modal again
                     D.header.style.display = 'none';
                     D.appContainer.style.display = 'none';
                     D.apiKeyModal.classList.add('active');
@@ -370,10 +385,10 @@
 
             const startNewChat = (history = []) => {
                 if (!state.genAI) return;
-                // **[FIX]** Updated model to gemini-2.5-pro as per user's request and provided documentation.
+                // Model is set to gemini-2.5-pro as requested, Google Search tool is enabled
                 const model = state.genAI.getGenerativeModel({ 
                     model: "gemini-2.5-pro", 
-                    tools: [{googleSearch: {}}], // Google Search tool is explicitly enabled
+                    tools: [{googleSearch: {}}], 
                     systemInstruction: "你是一位專業的旅遊行程規劃助理。你會利用網路搜尋最新資訊來規劃行程。在與使用者對話後，你能根據要求將行程轉換為指定的 JSON 格式。請盡量提供精確的時間、費用（當地貨幣，純數字）和備註。備註中可以包含景點的官方網站連結。",
                 });
                 state.chatHistory = history.length > 0 ? history : [ 
@@ -421,7 +436,7 @@
                 const loadingIndicator = addMessageToChatBox('... 正在為您生成結構化行程 ...', 'ai');
                 const jsonPrompt = `基於我們以上的對話內容，請將整個行程規劃轉換為一個嚴格的 JSON 物件。不要包含任何 JSON 以外的解釋性文字、註解或 markdown 語法 (例如 \`\`\`json)。JSON 結構必須如下：{"tripName": "一個吸引人的旅程名稱，例如'東京動漫美食五日探險'","cities": [{"cityName": "城市名稱","duration": "停留天數","days": [{"day": "第幾天數字","theme": "當日主題或摘要","items": [{"type": "景點|餐飲|交通|住宿|購物|其他","startTime": "HH:MM","endTime": "HH:MM","name": "項目名稱","cost": 數字,"notes": "備註，可包含 **Markdown** 和 [連結](https://...)"}]}]}]}`;
                 try {
-                    // **[FIX]** Updated model to gemini-2.5-pro here as well.
+                    // Model is set to gemini-2.5-pro here as well.
                     const model = state.genAI.getGenerativeModel({ model: "gemini-2.5-pro" }); 
                     const fullPrompt = state.chatHistory.map(h => `${h.role}: ${h.parts[0].text}`).join('\n') + `\n\n${jsonPrompt}`;
                     const result = await model.generateContent(fullPrompt);
@@ -494,7 +509,7 @@
                     });
                 });
                 D.totalCostText.textContent = `預計總花費: ${totalCost.toLocaleString()}`;
-                lucide.createIcons();
+                lucide.createIcons(); // Re-render icons after DOM manipulation
             };
             
             const updateTripSelector = () => {
@@ -672,7 +687,8 @@
                     document.body.classList.remove('dark-mode'); 
                     D.themeToggleBtn.innerHTML = `<i data-lucide="sun"></i>`; 
                 }
-                lucide.createIcons();
+                // Call createIcons here to ensure theme toggle icon is rendered correctly after theme switch
+                lucide.createIcons(); 
             };
 
             const toggleSidePanel = () => {
