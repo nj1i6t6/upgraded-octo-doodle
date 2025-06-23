@@ -24,6 +24,7 @@
             --user-msg-bg: #007bff;
             --ai-msg-bg: #e9ecef;
             --icon-color: #555;
+            --danger-color: #dc3545;
         }
 
         body.dark-mode {
@@ -60,11 +61,13 @@
             border-bottom: 1px solid var(--border-color);
             box-shadow: 0 2px 8px var(--shadow-color);
             flex-shrink: 0;
+            position: relative;
+            z-index: 100;
         }
         .header h1 { margin: 0; font-size: 1.5em; }
         .header-controls { display: flex; align-items: center; gap: 15px; }
         .theme-toggle, .menu-toggle {
-            background: none; border: none; cursor: pointer; color: var(--icon-color);
+            background: none; border: none; cursor: pointer; color: var(--icon-color); padding: 5px;
         }
         .menu-toggle { display: none; } /* Hidden on desktop */
 
@@ -95,7 +98,7 @@
         }
 
         /* --- Chat Panel --- */
-        .chat-box { flex-grow: 1; padding: 20px; overflow-y: auto; }
+        .chat-box { flex-grow: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column;}
         .chat-message { margin-bottom: 15px; padding: 10px 15px; border-radius: 18px; max-width: 85%; line-height: 1.5; }
         .user-message { background-color: var(--user-msg-bg); color: white; align-self: flex-end; margin-left: auto; }
         .ai-message { background-color: var(--ai-msg-bg); color: var(--text-color); align-self: flex-start; }
@@ -103,7 +106,7 @@
         @keyframes blink { 50% { opacity: 0; } }
         .input-area { display: flex; padding: 15px; border-top: 1px solid var(--border-color); }
         #userInput { flex-grow: 1; padding: 12px; border: 1px solid var(--border-color); border-radius: 20px; margin-right: 10px; background-color: var(--bg-color); color: var(--text-color); }
-        #sendBtn { padding: 12px 20px; border: none; background-color: var(--primary-color); color: white; border-radius: 20px; cursor: pointer; transition: background-color 0.3s; }
+        #sendBtn { padding: 0 15px; border: none; background-color: var(--primary-color); color: white; border-radius: 20px; cursor: pointer; transition: background-color 0.3s; display: flex; align-items: center; justify-content: center; }
         #sendBtn:hover { background-color: var(--primary-hover-color); }
         #sendBtn:disabled { background-color: #ccc; cursor: not-allowed; }
         .prompt-suggestions { padding: 10px 20px 0; display: flex; flex-wrap: wrap; gap: 8px; }
@@ -121,6 +124,7 @@
             cursor: pointer;
         }
         .trip-controls button.primary { background-color: var(--primary-color); color: white; border-color: var(--primary-color); }
+        .trip-controls button.danger { border-color: var(--danger-color); color: var(--danger-color); }
         #trip-display h3 { border-bottom: 2px solid var(--primary-color); padding-bottom: 10px; }
         .day-card { border: 1px solid var(--border-color); border-radius: 8px; margin-bottom: 20px; padding: 15px; }
         .day-header { display: flex; justify-content: space-between; align-items: center; }
@@ -156,6 +160,7 @@
                 z-index: 2000;
                 transition: right 0.3s ease-in-out;
                 box-shadow: -5px 0 15px rgba(0,0,0,0.2);
+                border-radius: 0;
             }
             .trip-panel.show {
                 right: 0;
@@ -176,7 +181,7 @@
 </head>
 <body>
 
-    <div id="api-key-modal" class="modal active">
+    <div id="api-key-modal" class="modal">
         <div class="modal-content">
             <h2>請輸入您的 Google Gemini API 金鑰</h2>
             <p>您的金鑰將會儲存在瀏覽器中，方便下次使用。</p>
@@ -247,7 +252,7 @@
             <div class="trip-controls">
                 <select id="tripSelector"></select>
                 <button id="newTripBtn" class="primary">新行程</button>
-                <button id="deleteTripBtn">刪除目前行程</button>
+                <button id="deleteTripBtn" class="danger">刪除</button>
                 <button id="exportJsonBtn">匯出JSON</button>
                 <button id="exportMdBtn">匯出MD</button>
             </div>
@@ -327,21 +332,43 @@
             loadState();
             applyTheme();
             updateTripSelector();
-            lucide.createIcons();
-
+            
             const apiKey = localStorage.getItem('GEMINI_API_KEY');
             if (apiKey) {
+                setupAI(apiKey);
+            } else {
+                D.apiKeyModal.classList.add('active');
+                D.appContainer.style.display = 'none';
+            }
+            lucide.createIcons();
+        };
+        
+        // **[FIXED]** 核心 AI 初始化函式，包含錯誤處理
+        const setupAI = (apiKey) => {
+            try {
                 state.genAI = new GoogleGenerativeAI(apiKey);
                 D.apiKeyModal.classList.remove('active');
                 D.appContainer.style.display = 'flex';
+                
                 startNewChat();
+                
                 if (state.currentTripId && state.allTrips[state.currentTripId]) {
                     renderTrip(state.allTrips[state.currentTripId]);
                 }
-            } else {
+                
+                // 確保切換畫面後圖示能被渲染
+                lucide.createIcons();
+
+            } catch (error) {
+                alert('AI 初始化失敗！請檢查您的 API 金鑰是否正確。\n錯誤訊息: ' + error.message);
+                console.error("AI Setup Error:", error);
+                // 清除無效金鑰，讓使用者可以重新輸入
+                localStorage.removeItem('GEMINI_API_KEY');
                 D.apiKeyModal.classList.add('active');
+                D.appContainer.style.display = 'none';
             }
         };
+
 
         // --- 核心功能：聊天與行程生成 ---
         const startNewChat = (history = []) => {
@@ -381,7 +408,8 @@
                 state.chatHistory.push({ role: "model", parts: [{ text: text }] });
                 
                 // 自動觸發 JSON 生成
-                if (text.includes("行程規劃好了") || text.includes("這是您的行程")) {
+                const keywords = ["行程規劃好了", "這是您的行程", "行程如下", "行程安排好了"];
+                if (keywords.some(kw => text.includes(kw))) {
                      generateTripJson();
                 }
 
@@ -401,7 +429,7 @@
                 return;
             }
 
-            const loadingIndicator = addMessageToChatBox('正在為您生成結構化行程...', 'ai');
+            const loadingIndicator = addMessageToChatBox('... 正在為您生成結構化行程 ...', 'ai');
             
             const jsonPrompt = `
                 基於我們以上的對話內容，請將整個行程規劃轉換為一個嚴格的 JSON 物件。
@@ -468,7 +496,7 @@
             D.tripDisplay.appendChild(tripTitle);
 
             data.cities.forEach(city => {
-                city.days.forEach((day, dayIndex) => {
+                (city.days || []).forEach((day, dayIndex) => {
                     const dayCard = document.createElement('div');
                     dayCard.className = 'day-card';
                     dayCard.dataset.dayIndex = dayIndex;
@@ -513,7 +541,6 @@
                     D.tripDisplay.appendChild(dayCard);
                     totalCost += dayCost;
 
-                    // Init SortableJS for this day's items
                     new Sortable(itemsContainer, {
                         animation: 150,
                         ghostClass: 'sortable-ghost',
@@ -523,7 +550,7 @@
                             day.items.splice(newIndex, 0, movedItem);
                             state.allTrips[state.currentTripId] = data;
                             saveState();
-                            renderTrip(data); // Re-render to update indices
+                            renderTrip(data);
                         }
                     });
                 });
@@ -535,7 +562,8 @@
         
         const updateTripSelector = () => {
             D.tripSelector.innerHTML = '';
-            if (Object.keys(state.allTrips).length === 0) {
+            const tripIds = Object.keys(state.allTrips);
+            if (tripIds.length === 0) {
                 const option = document.createElement('option');
                 option.textContent = "尚無行程";
                 D.tripSelector.appendChild(option);
@@ -544,7 +572,7 @@
             } else {
                  D.tripSelector.disabled = false;
                  D.deleteTripBtn.disabled = false;
-                 for (const tripId in state.allTrips) {
+                 tripIds.forEach(tripId => {
                     const option = document.createElement('option');
                     option.value = tripId;
                     option.textContent = state.allTrips[tripId].tripName || '未命名行程';
@@ -552,16 +580,17 @@
                         option.selected = true;
                     }
                     D.tripSelector.appendChild(option);
-                }
+                });
             }
         };
 
         const renderChatHistory = () => {
             D.chatBox.innerHTML = '';
-            state.chatHistory.slice(-10).forEach(msg => { // Only render recent history to avoid slowness
+            state.chatHistory.forEach(msg => { 
                 const role = msg.role === 'model' ? 'ai' : 'user';
                 addMessageToChatBox(msg.parts[0].text, role, false);
             });
+            D.chatBox.scrollTop = D.chatBox.scrollHeight;
         };
         
         const addMessageToChatBox = (text, sender, shouldScroll = true) => {
@@ -604,7 +633,7 @@
                 const apiKey = D.apiKeyInput.value.trim();
                 if (apiKey) {
                     localStorage.setItem('GEMINI_API_KEY', apiKey);
-                    initializeApp();
+                    setupAI(apiKey);
                 } else {
                     alert('請輸入有效的 API 金鑰');
                 }
@@ -755,13 +784,13 @@
             if (!state.currentTripId) return;
             const trip = state.allTrips[state.currentTripId];
             let md = `# ${trip.tripName}\n\n`;
-            trip.cities.forEach(city => {
+            (trip.cities || []).forEach(city => {
                 md += `## ${city.cityName} (${city.duration}天)\n\n`;
-                city.days.forEach(day => {
+                (city.days || []).forEach(day => {
                     md += `### Day ${day.day}: ${day.theme}\n\n`;
-                    day.items.forEach(item => {
-                        md += `*   **[${item.type}] ${item.name}** (${item.startTime} - ${item.endTime})\n`;
-                        md += `    *   費用: ${item.cost}\n`;
+                    (day.items || []).forEach(item => {
+                        md += `*   **[${item.type}] ${item.name}** (${item.startTime || ''} - ${item.endTime || ''})\n`;
+                        md += `    *   費用: ${item.cost || 0}\n`;
                         md += `    *   備註: ${item.notes || '無'}\n`;
                     });
                     md += `\n`;
