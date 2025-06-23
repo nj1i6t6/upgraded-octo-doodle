@@ -5,11 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI 旅遊規劃助理 Pro</title>
     
-    <!-- 引入 Marked.js 用來渲染 Markdown -->
+    <!-- 引入外部函式庫 -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-    <!-- 引入 Sortable.js 用來實現拖曳排序 -->
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
-    <!-- 引入 Lucide Icons for a cleaner look -->
     <script src="https://cdn.jsdelivr.net/npm/lucide-static@latest/dist/lucide.min.js"></script>
 
     <style>
@@ -138,13 +136,30 @@
         .item-card .notes a { color: var(--primary-color); text-decoration: none; }
         #total-cost-display { margin-top: 20px; padding-top: 20px; border-top: 2px solid var(--border-color); }
 
-        /* --- Modals --- */
+        /* --- Modals & Overlays --- */
         .modal { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: none; justify-content: center; align-items: center; z-index: 1000; }
         .modal.active { display: flex; }
         .modal-content { background: var(--panel-bg-color); padding: 30px; border-radius: 8px; text-align: center; box-shadow: 0 5px 15px rgba(0,0,0,0.3); width: 90%; max-width: 500px; }
         .modal-content h2 { margin-top: 0; }
         .modal-content input, .modal-content textarea, .modal-content select { width: 100%; padding: 10px; margin-bottom: 15px; border-radius: 5px; border: 1px solid var(--border-color); box-sizing: border-box; background-color: var(--bg-color); color: var(--text-color); }
         .modal-buttons { display: flex; justify-content: flex-end; gap: 10px; }
+
+        /* --- Fallback Error Message --- */
+        .error-message {
+            display: none;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: #fff3cd;
+            color: #856404;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid #ffeeba;
+            text-align: center;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            z-index: 9999;
+        }
 
         /* --- Responsive Design --- */
         @media (max-width: 768px) {
@@ -162,9 +177,7 @@
                 box-shadow: -5px 0 15px rgba(0,0,0,0.2);
                 border-radius: 0;
             }
-            .trip-panel.show {
-                right: 0;
-            }
+            .trip-panel.show { right: 0; }
             .panel-overlay {
                 position: fixed;
                 top: 0;
@@ -181,6 +194,13 @@
 </head>
 <body>
 
+    <!-- Fallback message for loading failures -->
+    <div id="loading-error" class="error-message">
+        <h4>應用程式載入失敗</h4>
+        <p>請檢查您的網路連線，然後重新整理頁面。如果問題持續發生，可能是外部服務暫時無法使用。</p>
+    </div>
+
+    <!-- All initial UI elements are now inside the body -->
     <div id="api-key-modal" class="modal">
         <div class="modal-content">
             <h2>請輸入您的 Google Gemini API 金鑰</h2>
@@ -218,7 +238,7 @@
         </div>
     </div>
 
-    <div class="header">
+    <div class="header" style="display: none;">
         <h1>AI 旅遊規劃助理</h1>
         <div class="header-controls">
             <button class="theme-toggle" id="themeToggleBtn">
@@ -268,21 +288,34 @@
         </div>
     </div>
     
+    <!-- This standard script checks if the module script failed to load -->
+    <script>
+        window.moduleLoadTimeout = setTimeout(() => {
+            if (!window.appInitialized) {
+                document.getElementById('loading-error').style.display = 'block';
+            }
+        }, 5000);
+    </script>
+    
     <script type="module">
+        // This flag indicates the module has started execution.
+        window.appInitialized = false;
+
         import { GoogleGenerativeAI } from "https://esm.run/@google/generative-ai";
 
         // --- 全域狀態管理 ---
-        let state = {
+        const state = {
             genAI: null,
             chat: null,
             chatHistory: [],
-            allTrips: {}, // { "tripId1": tripData, "tripId2": tripData }
+            allTrips: {},
             currentTripId: null,
             theme: 'light',
         };
 
         // --- DOM 元素 ---
         const D = {
+            header: document.querySelector('.header'),
             apiKeyModal: document.getElementById('api-key-modal'),
             appContainer: document.getElementById('app-container'),
             apiKeyInput: document.getElementById('apiKeyInput'),
@@ -307,47 +340,67 @@
             modalTitle: document.getElementById('modalTitle'),
         };
 
-        // --- 本地儲存 ---
-        const saveState = () => {
-            const dataToSave = {
-                allTrips: state.allTrips,
-                currentTripId: state.currentTripId,
-                theme: state.theme,
-            };
-            localStorage.setItem('travelAppData', JSON.stringify(dataToSave));
-        };
-
+        // **[FIXED]** Safely load state from localStorage
         const loadState = () => {
-            const savedData = localStorage.getItem('travelAppData');
-            if (savedData) {
-                const parsedData = JSON.parse(savedData);
-                state.allTrips = parsedData.allTrips || {};
-                state.currentTripId = parsedData.currentTripId || null;
-                state.theme = parsedData.theme || 'light';
+            try {
+                const savedData = localStorage.getItem('travelAppData');
+                if (savedData) {
+                    const parsedData = JSON.parse(savedData);
+                    state.allTrips = parsedData.allTrips || {};
+                    state.currentTripId = parsedData.currentTripId || null;
+                    state.theme = parsedData.theme || 'light';
+                }
+            } catch (error) {
+                console.error("Failed to load or parse state from localStorage. Resetting state.", error);
+                localStorage.removeItem('travelAppData'); // Clear corrupted data
+                // Reset to default state
+                state.allTrips = {};
+                state.currentTripId = null;
+                state.theme = 'light';
             }
         };
 
-        // --- 初始化 ---
+        const saveState = () => {
+            try {
+                const dataToSave = {
+                    allTrips: state.allTrips,
+                    currentTripId: state.currentTripId,
+                    theme: state.theme,
+                };
+                localStorage.setItem('travelAppData', JSON.stringify(dataToSave));
+            } catch (error) {
+                console.error("Failed to save state to localStorage:", error);
+                alert("無法儲存您的進度，可能是瀏覽器儲存空間已滿。");
+            }
+        };
+
         const initializeApp = () => {
             loadState();
             applyTheme();
+            setupEventListeners();
             updateTripSelector();
             
             const apiKey = localStorage.getItem('GEMINI_API_KEY');
             if (apiKey) {
                 setupAI(apiKey);
             } else {
-                D.apiKeyModal.classList.add('active');
+                D.header.style.display = 'none';
                 D.appContainer.style.display = 'none';
+                D.apiKeyModal.classList.add('active');
             }
             lucide.createIcons();
+            
+            window.appInitialized = true;
+            clearTimeout(window.moduleLoadTimeout);
+            document.getElementById('loading-error').style.display = 'none';
         };
         
-        // **[FIXED]** 核心 AI 初始化函式，包含錯誤處理
         const setupAI = (apiKey) => {
             try {
                 state.genAI = new GoogleGenerativeAI(apiKey);
+                
                 D.apiKeyModal.classList.remove('active');
+                D.header.style.display = 'flex';
                 D.appContainer.style.display = 'flex';
                 
                 startNewChat();
@@ -356,21 +409,20 @@
                     renderTrip(state.allTrips[state.currentTripId]);
                 }
                 
-                // 確保切換畫面後圖示能被渲染
                 lucide.createIcons();
 
             } catch (error) {
                 alert('AI 初始化失敗！請檢查您的 API 金鑰是否正確。\n錯誤訊息: ' + error.message);
                 console.error("AI Setup Error:", error);
-                // 清除無效金鑰，讓使用者可以重新輸入
                 localStorage.removeItem('GEMINI_API_KEY');
-                D.apiKeyModal.classList.add('active');
+                D.header.style.display = 'none';
                 D.appContainer.style.display = 'none';
+                D.apiKeyModal.classList.add('active');
             }
         };
 
-
-        // --- 核心功能：聊天與行程生成 ---
+        // --- All other functions (startNewChat, sendMessage, renderTrip, etc.) remain the same ---
+        // ... [The rest of the JS functions from the previous version go here] ...
         const startNewChat = (history = []) => {
             if (!state.genAI) return;
             const model = state.genAI.getGenerativeModel({ 
@@ -407,7 +459,6 @@
                 state.chatHistory.push({ role: "user", parts: [{ text: message }] });
                 state.chatHistory.push({ role: "model", parts: [{ text: text }] });
                 
-                // 自動觸發 JSON 生成
                 const keywords = ["行程規劃好了", "這是您的行程", "行程如下", "行程安排好了"];
                 if (keywords.some(kw => text.includes(kw))) {
                      generateTripJson();
@@ -481,7 +532,6 @@
             }
         };
 
-        // --- 渲染與 UI 更新 ---
         const renderTrip = (data) => {
             if (!data) {
                 D.tripDisplay.innerHTML = `<p>請開始一個新對話，或從上方選擇一個已儲存的行程。</p>`;
@@ -495,7 +545,7 @@
             tripTitle.textContent = data.tripName || '未命名行程';
             D.tripDisplay.appendChild(tripTitle);
 
-            data.cities.forEach(city => {
+            (data.cities || []).forEach(city => {
                 (city.days || []).forEach((day, dayIndex) => {
                     const dayCard = document.createElement('div');
                     dayCard.className = 'day-card';
@@ -626,9 +676,7 @@
             D.itemEditorModal.classList.add('active');
         };
 
-        // --- 事件監聽器 ---
         const setupEventListeners = () => {
-            // API Key
             D.saveApiBtn.addEventListener('click', () => {
                 const apiKey = D.apiKeyInput.value.trim();
                 if (apiKey) {
@@ -639,7 +687,6 @@
                 }
             });
 
-            // Chat
             D.sendBtn.addEventListener('click', sendMessage);
             D.userInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendMessage(); });
             document.querySelector('.prompt-suggestions').addEventListener('click', (e) => {
@@ -649,12 +696,10 @@
                 }
             });
 
-            // Theme & RWD
             D.themeToggleBtn.addEventListener('click', toggleTheme);
             D.menuToggleBtn.addEventListener('click', toggleSidePanel);
             D.panelOverlay.addEventListener('click', toggleSidePanel);
 
-            // Trip Management
             D.tripSelector.addEventListener('change', (e) => {
                 state.currentTripId = e.target.value;
                 saveState();
@@ -676,11 +721,9 @@
                 }
             });
             
-            // Export
             D.exportJsonBtn.addEventListener('click', exportAsJson);
             D.exportMdBtn.addEventListener('click', exportAsMarkdown);
 
-            // Item Editing Modal
             D.cancelEditBtn.addEventListener('click', () => D.itemEditorModal.classList.remove('active'));
             D.itemEditorForm.addEventListener('submit', (e) => {
                 e.preventDefault();
@@ -698,9 +741,9 @@
                 };
                 
                 const currentTrip = state.allTrips[state.currentTripId];
-                if (itemIndex) { // Editing
+                if (itemIndex) {
                     currentTrip.cities[0].days[dayIndex].items[parseInt(itemIndex)] = newItemData;
-                } else { // Adding
+                } else { 
                     if (!currentTrip.cities[0].days[dayIndex].items) {
                         currentTrip.cities[0].days[dayIndex].items = [];
                     }
@@ -713,7 +756,6 @@
                 D.itemEditorModal.classList.remove('active');
             });
 
-            // Delegated events for item cards
             D.tripDisplay.addEventListener('click', (e) => {
                 const editBtn = e.target.closest('.edit-item-btn');
                 const deleteBtn = e.target.closest('.delete-item-btn');
@@ -739,7 +781,6 @@
             });
         };
 
-        // --- 輔助函式 ---
         const toggleTheme = () => {
             state.theme = state.theme === 'light' ? 'dark' : 'light';
             applyTheme();
@@ -775,7 +816,7 @@
         const exportAsJson = () => {
             if (state.currentTripId) {
                 const trip = state.allTrips[state.currentTripId];
-                const filename = `${trip.tripName.replace(/\s/g, '_') || 'trip'}.json`;
+                const filename = `${(trip.tripName || 'trip').replace(/\s/g, '_')}.json`;
                 downloadFile(filename, JSON.stringify(trip, null, 2), 'application/json');
             }
         };
@@ -796,13 +837,21 @@
                     md += `\n`;
                 });
             });
-            const filename = `${trip.tripName.replace(/\s/g, '_') || 'trip'}.md`;
+            const filename = `${(trip.tripName || 'trip').replace(/\s/g, '_')}.md`;
             downloadFile(filename, md, 'text/markdown');
         };
 
         // --- 啟動！ ---
-        setupEventListeners();
-        initializeApp();
+        try {
+            initializeApp();
+        } catch (e) {
+            console.error("A critical error occurred during app initialization:", e);
+            document.body.innerHTML = `<div id="loading-error" class="error-message" style="display:block;">
+                <h4>應用程式發生嚴重錯誤</h4>
+                <p>很抱歉，應用程式啟動失敗。請嘗試清除瀏覽器快取後再試一次。</p>
+                <p style="font-size: 0.8em; color: #666;">錯誤細節: ${e.message}</p>
+            </div>`;
+        }
 
     </script>
 </body>
